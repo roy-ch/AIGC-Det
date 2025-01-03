@@ -23,6 +23,8 @@ class BaseOptions():
         parser.add_argument('--num_threads', default=4, type=int, help='# threads for loading data')
         parser.add_argument('--init_type', type=str, default='normal', help='network initialization (normal/xavier/kaiming/orthogonal)')
         parser.add_argument('--init_gain', type=float, default=0.02, help='scaling factor for normal, xavier and orthogonal.')
+
+        parser.add_argument('--cls_model', type=str, default='mlp_cls', help='classification model(e.g.:conv_cls/mlp_cls)')
         
         self.initialized = True
         return parser

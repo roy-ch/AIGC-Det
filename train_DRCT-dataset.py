@@ -46,8 +46,9 @@ if __name__ == '__main__':
     xdl = AIGCDetectionDataset(opt.root_path, fake_root_path=opt.fake_root_path, fake_indexes=opt.fake_indexes, phase='train',
                                is_one_hot=is_one_hot, num_classes=opt.num_classes, inpainting_dir=opt.inpainting_dir, is_dire=opt.is_dire,
                                transform=create_train_transforms(size=opt.input_size, is_crop=opt.is_crop), 
-                               prob_aug=opt.prob_aug, prob_cutmix=opt.prob_cutmix, prob_cutmixup_real_fake=opt.prob_cutmixup_real_fake, 
-                               prob_cutmixup_real_rec=opt.prob_cutmixup_real_rec, prob_cutmixup_real_real=opt.prob_cutmixup_real_real
+                               prob_aug=opt.prob_aug, prob_cutmix=opt.prob_cutmix, prob_cutmixup_real_fake=opt.prob_cutmixup_real_fake,
+                               prob_cutmixup_real_rec=opt.prob_cutmixup_real_rec, prob_cutmixup_real_real=opt.prob_cutmixup_real_real,
+                               # mask_resize=(not opt.unet and not opt.maskrcnn)
                                )
     sampler = None
     
@@ -105,7 +106,6 @@ if __name__ == '__main__':
                 
                 
                 if model.total_steps == 0 or model.total_steps % 500 == 0:
-                    print(f'model.total_steps:{model.total_steps}')
                     ####### 可视化
                     masks_logits = model.output["mask"]
                     masks = torch.sigmoid(masks_logits.squeeze(1))
@@ -137,7 +137,12 @@ if __name__ == '__main__':
     #                         file.write(line + "\n")
 
                     # gd_masks = [((x.to('cpu')) > 0.5).to(torch.bool).squeeze() for x in gd_masks]
-                    gd_masks = torch.stack([((x > 0.5).to(torch.bool)).view(256, 256) for x in gd_masks])
+                    if 'unet' in opt.arch or 'maskrcnn' in opt.arch:
+                        _mask_size = 224
+                    else:
+                        _mask_size = 256
+        
+                    gd_masks = torch.stack([((x > 0.5).to(torch.bool)).view(_mask_size, _mask_size) for x in gd_masks])
                     masks = masks.to('cpu').view(masks.size(0), int(masks.size(1)**0.5), int(masks.size(1)**0.5))
                     # print(f'maks_size:{masks.size()},gd_masks_size:{gd_masks.size()}')
                     # print(masks)
@@ -180,6 +185,90 @@ if __name__ == '__main__':
                                 save_path=mask_save_path,
                                 file_name=file_name,
                             )
+
+                if model.total_steps % (len(train_loader) // 3) == 0:
+                    # Validation
+                    model.eval()
+                    print('Validation')
+                    if opt.fully_supervised:
+                        ious, f1_best, f1_fixed, mean_ap, _ = validate_fully_supervised(model.model, eval_loader,
+                                                                                        opt.train_dataset)
+                        mean_iou = sum(ious) / len(ious)
+                        val_writer.add_scalar('iou', mean_iou, model.total_steps)
+                        print(f"(Val @ epoch {epoch}) IOU: {round(mean_iou, 2)}")
+
+                        mean_f1_best = sum(f1_best) / len(f1_best)
+                        val_writer.add_scalar('F1_best', mean_f1_best, model.total_steps)
+                        print(f"(Val @ epoch {epoch}) F1 best: {round(mean_f1_best, 4)}")
+
+                        mean_f1_fixed = sum(f1_fixed) / len(f1_fixed)
+                        val_writer.add_scalar('F1_fixed', mean_f1_fixed, model.total_steps)
+                        print(f"(Val @ epoch {epoch}) F1 fixed: {round(mean_f1_fixed, 4)}")
+
+                        mean_ap = sum(mean_ap) / len(mean_ap)
+                        val_writer.add_scalar('Mean AP', mean_ap, model.total_steps)
+                        print(f"(Val @ epoch {epoch}) Mean AP: {round(mean_ap, 4)}")
+
+                        # save best model weights or those at save_epoch_freq
+                        if mean_iou > best_iou:
+                            print('saving best model at the end of epoch %d' % (epoch))
+                            # model.save_networks( 'model_epoch_best.pth' )
+                            # model.save_networks(f'model_best_epoch_{epoch}.pth' )
+                            best_iou = mean_iou
+
+                        early_stopping(mean_iou, model)
+                    elif opt.mask_plus_label:
+                        ious, f1_best, f1_fixed, ap, acc, acc_best_thres, best_thres, _ = validate_masked_detection_v2(
+                            model.model, eval_loader)
+                        mean_iou = sum(ious) / len(ious)
+                        val_writer.add_scalar('iou', mean_iou, model.total_steps)
+                        print(f"(Val @ epoch {epoch}) IOU: {round(mean_iou, 2)}")
+
+                        mean_f1_best = sum(f1_best) / len(f1_best)
+                        val_writer.add_scalar('F1_best', mean_f1_best, model.total_steps)
+                        print(f"(Val @ epoch {epoch}) F1 best: {round(mean_f1_best, 4)}")
+
+                        mean_f1_fixed = sum(f1_fixed) / len(f1_fixed)
+                        val_writer.add_scalar('F1_fixed', mean_f1_fixed, model.total_steps)
+                        print(f"(Val @ epoch {epoch}) F1 fixed: {round(mean_f1_fixed, 4)}")
+
+                        val_writer.add_scalar('accuracy', acc, model.total_steps)
+                        val_writer.add_scalar('ap', ap, model.total_steps)
+                        print(f"(Val @ epoch {epoch}) ACC: {acc}; ACC_BEST_THRES: {acc_best_thres}; AP: {ap}")
+
+                        # save best model weights or those at save_epoch_freq
+                        if acc > best_iou:
+                            print('saving best model at the end of epoch %d' % (epoch))
+
+                            # model.save_networks( 'model_epoch_best.pth' )
+                            # model.save_networks(f'model_best_epoch_{epoch}_acc_{acc}.pth' )
+                            best_iou = acc
+
+                        early_stopping(acc, model)
+                    else:
+                        ap, r_acc, f_acc, acc, _ = validate(model.model, eval_loader)
+                        val_writer.add_scalar('accuracy', acc, model.total_steps)
+                        val_writer.add_scalar('ap', ap, model.total_steps)
+                        print(f"(Val @ epoch {epoch}) ACC: {acc}; AP: {ap}")
+
+                        # save best model weights or those at save_epoch_freq
+                        if ap > best_iou:
+                            print('saving best model at the end of epoch %d' % (epoch))
+                            print(ap, best_iou)
+                            # model.save_networks(f'model_best_epoch_{epoch}_acc_{acc}.pth' )
+                            best_iou = ap
+
+                        early_stopping(acc, model)
+
+                    model.save_networks(f'model_epoch_{epoch}_acc_{acc:.2f}.pth')
+                    if early_stopping.early_stop:
+                        cont_train = model.adjust_learning_rate()
+                        if cont_train:
+                            print("Learning rate dropped by 10, continue training...")
+                            early_stopping = EarlyStopping(patience=opt.earlystop_epoch, delta=-0.002, verbose=True)
+                        else:
+                            print("Early stopping.")
+                            break
 
 
         epoch_loss /= len(train_loader)
@@ -237,85 +326,5 @@ if __name__ == '__main__':
             model.logits = []
             model.labels = []
 
-        # Validation
-        model.eval()
-        print('Validation')
-        if opt.fully_supervised:
-            ious, f1_best, f1_fixed, mean_ap, _ = validate_fully_supervised(model.model, eval_loader, opt.train_dataset)
-            mean_iou = sum(ious)/len(ious)
-            val_writer.add_scalar('iou', mean_iou, model.total_steps)
-            print(f"(Val @ epoch {epoch}) IOU: {round(mean_iou, 2)}")
-            
-            mean_f1_best = sum(f1_best)/len(f1_best)
-            val_writer.add_scalar('F1_best', mean_f1_best, model.total_steps)
-            print(f"(Val @ epoch {epoch}) F1 best: {round(mean_f1_best, 4)}")
-            
-            mean_f1_fixed = sum(f1_fixed)/len(f1_fixed)
-            val_writer.add_scalar('F1_fixed', mean_f1_fixed, model.total_steps)
-            print(f"(Val @ epoch {epoch}) F1 fixed: {round(mean_f1_fixed, 4)}")
-            
-            mean_ap = sum(mean_ap)/len(mean_ap)
-            val_writer.add_scalar('Mean AP', mean_ap, model.total_steps)
-            print(f"(Val @ epoch {epoch}) Mean AP: {round(mean_ap, 4)}")
-            
-            # save best model weights or those at save_epoch_freq 
-            if mean_iou > best_iou:
-                print('saving best model at the end of epoch %d' % (epoch))
-                # model.save_networks( 'model_epoch_best.pth' )
-                model.save_networks(f'model_best_epoch_{epoch}_acc_{acc}.pth' )
-                best_iou = mean_iou
-            
-            early_stopping(mean_iou, model)
-        elif opt.mask_plus_label:
-            ious, f1_best, f1_fixed, ap, acc, acc_best_thres, best_thres, _ = validate_masked_detection_v2(model.model, eval_loader)
-            mean_iou = sum(ious)/len(ious)
-            val_writer.add_scalar('iou', mean_iou, model.total_steps)
-            print(f"(Val @ epoch {epoch}) IOU: {round(mean_iou, 2)}")
-            
-            mean_f1_best = sum(f1_best)/len(f1_best)
-            val_writer.add_scalar('F1_best', mean_f1_best, model.total_steps)
-            print(f"(Val @ epoch {epoch}) F1 best: {round(mean_f1_best, 4)}")
-            
-            mean_f1_fixed = sum(f1_fixed)/len(f1_fixed)
-            val_writer.add_scalar('F1_fixed', mean_f1_fixed, model.total_steps)
-            print(f"(Val @ epoch {epoch}) F1 fixed: {round(mean_f1_fixed, 4)}")
-            
-            val_writer.add_scalar('accuracy', acc, model.total_steps)
-            val_writer.add_scalar('ap', ap, model.total_steps)
-            print(f"(Val @ epoch {epoch}) ACC: {acc}; ACC_BEST_THRES: {acc_best_thres}; AP: {ap}")
-            
-            # save best model weights or those at save_epoch_freq 
-            if acc > best_iou:
-                print('saving best model at the end of epoch %d' % (epoch))
-
-                # model.save_networks( 'model_epoch_best.pth' )
-                model.save_networks(f'model_best_epoch_{epoch}_acc_{acc}.pth' )
-                best_iou = acc
-
-            early_stopping(acc, model)
-        else:
-            ap, r_acc, f_acc, acc, _ = validate(model.model, eval_loader)
-            val_writer.add_scalar('accuracy', acc, model.total_steps)
-            val_writer.add_scalar('ap', ap, model.total_steps)
-            print(f"(Val @ epoch {epoch}) ACC: {acc}; AP: {ap}")
-
-            # save best model weights or those at save_epoch_freq 
-            if ap > best_iou:
-                print('saving best model at the end of epoch %d' % (epoch))
-                print(ap, best_iou)
-                model.save_networks(f'model_best_epoch_{epoch}_acc_{acc}.pth' )
-                best_iou = ap
-            
-            early_stopping(acc, model)
-            
-        model.save_networks(f'model_last_epoch_{epoch}_acc_{acc}.pth' )
-        if early_stopping.early_stop:
-            cont_train = model.adjust_learning_rate()
-            if cont_train:
-                print("Learning rate dropped by 10, continue training...")
-                early_stopping = EarlyStopping(patience=opt.earlystop_epoch, delta=-0.002, verbose=True)
-            else:
-                print("Early stopping.")
-                break
         model.train()
         print()

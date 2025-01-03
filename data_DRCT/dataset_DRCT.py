@@ -465,8 +465,6 @@ def load_train_data(real_root_path, fake_root_path,
                 total_fake_images.append(png_path)
             elif os.path.exists(jpg_path):
                 total_fake_images.append(jpg_path)       
-    
-    print(f'{phase}-total(load_train_data):{len(total_real_images)+len(total_fake_images)}, real:{len(total_real_images)},fake:{len(total_fake_images)}')
 
     return total_real_images, total_fake_images 
 
@@ -553,14 +551,6 @@ def find_img_path(root_path, img_name, dataset_name):
         img = os.path.join(root, f"{img_name}.png") 
     return img
 
-
-def process_aug_image(mask, prob_cutmix=0.5, prob_cutmixup_real_fake=0.2, prob_cutmixup_real_rec=0.4, image_real_paths=None, image_fake_paths=None, fake_root_path=None, transform=None):
-    # image_real_paths 是real图像的训练集(list)，image_fake_paths 是fake图像的训练集(list),fake_root_path假图像的文件夹路径(str)
-    mask = mask.expand(3, -1, -1)  # Shape becomes (3, H, W)
-    real_img = random.choice(image_real_paths)
-    img_name = os.path.splitext(os.path.basename(real_img))[0]
-
-
 def choose_img(image_real_paths):
     while True:
         # 随机选择一张图像
@@ -575,46 +565,69 @@ def choose_img(image_real_paths):
         # 判断图像是否满足最小尺寸要求
         if h >= 224 and w >= 224:  # 这里 min_size 是 (宽, 高)
             return real_img  # 返回符合要求的图像
-        
-def process_aug_image(mask, prob_cutmix=0.5, prob_cutmixup_real_fake=0.2, prob_cutmixup_real_rec=0.4, image_real_paths=None, image_fake_paths=None, fake_root_path=None, transform=None):
-    # image_real_paths 是real图像的训练集(list)，image_fake_paths 是fake图像的训练集(list),fake_root_path假图像的文件夹路径(str)
-    # mask = mask.expand(3, -1, -1)  # Shape becomes (3, H, W)
-    # real_img = random.choice(image_real_paths)
-    
+
+def transform_crop(image):
+    transform_crop = A.Compose([A.PadIfNeeded(min_height=224, min_width=224, border_mode=cv2.BORDER_CONSTANT, value=0),
+                                A.RandomCrop(height=224, width=224), ])
+    return transform_crop(image=image)['image']
+
+def transform_tensor(image):
+    transform_tensor = A.Compose([ToTensorV2()])
+    return transform_tensor(image=image)['image']
+
+def process_aug_image(mask, prob_cutmix=0.5, prob_cutmixup_real_fake=0.2, prob_cutmixup_real_rec=0.4, image_real_paths=None, image_fake_paths=None, fake_root_path=None,
+                      transform=None, lam=None):
     real_img = choose_img(image_real_paths)
-    
     img_name = os.path.splitext(os.path.basename(real_img))[0]
+
+    if lam == 1: # fake 图像
+        p = random.random()
+        if p < (prob_cutmixup_real_fake + (1 - prob_cutmixup_real_rec - prob_cutmixup_real_fake) // 2): # 抽取sd1.4(把real-real概率平分)
+            filtered_paths = [path for path in image_fake_paths if "v1-4" in path]
+            fake_path = random.choice(filtered_paths)
+        else: # 抽取对应的rec
+            fake_path = find_img_path(fake_root_path, img_name, 'inpainting')
+        fake_img, _ = read_image(fake_path)
+        fake_img = transform_crop(fake_img)
+        img_be_aug = transform_tensor(fake_img)
+        transform_aug = transform
+        img_aug = transform_aug(image=fake_img)['image'].type(torch.float32)
+        aug_label = 1
+        aug_mask_label = torch.ones((img_aug.shape[1], img_aug.shape[2]), dtype=torch.float32)
+        return img_aug, img_be_aug, aug_label, aug_mask_label
 
     if random.random()  < prob_cutmix: # cutmix
         p = random.random() 
         if p < prob_cutmixup_real_fake: # 混合real和sd1.4, 随机抽取sd1.4
             filtered_paths = [path for path in image_fake_paths if "v1-4" in path]
             fake_img = random.choice(filtered_paths)     
-            cutmix_img_aug, cutmix_img_be_aug, aug_label, aug_mask_label = cutmix_data(img1_path=real_img, img2_path=fake_img, label1=0, label2=1, mask=mask, transform=transform)
+            img_aug, img_be_aug, aug_label, aug_mask_label = cutmix_data(img1_path=real_img, img2_path=fake_img, label1=0, label2=1, mask=mask, transform=transform)
             
         elif p > prob_cutmixup_real_fake + prob_cutmixup_real_rec: # 混合real和real,随机抽取
             # real_img2 = random.choice(image_real_paths)
             real_img2 = choose_img(image_real_paths)
-            cutmix_img_aug, cutmix_img_be_aug, aug_label, aug_mask_label = cutmix_data(img1_path=real_img, img2_path=real_img2, label1=0, label2=0, mask=mask, transform=transform)
+            img_aug, img_be_aug, aug_label, aug_mask_label = cutmix_data(img1_path=real_img, img2_path=real_img2, label1=0, label2=0, mask=mask, transform=transform)
             
         else: # 混合real和rec, 抽取对应的rec
             rec_img = find_img_path(fake_root_path, img_name, 'inpainting')            
-            cutmix_img_aug, cutmix_img_be_aug, aug_label, aug_mask_label = cutmix_data(img1_path=real_img, img2_path=rec_img, label1=0, label2=1, mask=mask, transform=transform)
+            img_aug, img_be_aug, aug_label, aug_mask_label = cutmix_data(img1_path=real_img, img2_path=rec_img, label1=0, label2=1, mask=mask, transform=transform)
             
     else: # mixup, 抽取对应的rec      
         rec_img = find_img_path(fake_root_path, img_name, 'inpainting')
-        alpha = random.random()
-
-        cutmix_img_aug, cutmix_img_be_aug, aug_label, aug_mask_label = mixup_data(real_img, rec_img, mask, alpha, transform=transform)
+        # alpha = random.random()
+        alpha = random.choice([0.25, 0.5, 0.75])
+        img_aug, img_be_aug, aug_label, aug_mask_label = mixup_data(real_img, rec_img, mask, alpha, transform=transform)
         
-    return cutmix_img_aug, cutmix_img_be_aug, aug_label, aug_mask_label
+    return img_aug, img_be_aug, aug_label, aug_mask_label # 增强后的图像，增强操作前的图像，混合后的label标签，混合后的mask
 
 class AIGCDetectionDataset(Dataset):
     def __init__(self, root_path='/disk4/chenby/dataset/MSCOCO', fake_root_path='/disk4/chenby/dataset/DRCT-2M',
                  fake_indexes='1,2,3,4,5,6', phase='train', is_one_hot=False, seed=2021,
                  transform=None, use_label=True, num_classes=None, regex='*.*',
-                 is_dire=False, inpainting_dir='full_inpainting', post_aug_mode=None, 
-                 prob_aug=0.5, prob_cutmix=0.5, prob_cutmixup_real_fake=0.3, prob_cutmixup_real_rec=0.3, prob_cutmixup_real_real=0.4):
+                 is_dire=False, inpainting_dir='full_inpainting', post_aug_mode=None,
+                 prob_aug=0.5, prob_cutmix=0.5, prob_cutmixup_real_fake=0.3, prob_cutmixup_real_rec=0.3, prob_cutmixup_real_real=0.4,
+                 mask_resize=True
+                 ):
         self.root_path = root_path  # real 图像的根目录
         self.phase = phase
         self.is_one_hot = is_one_hot
@@ -653,11 +666,23 @@ class AIGCDetectionDataset(Dataset):
                 self.image_paths, self.labels = load_ForenSynths(root_path=root_path, seed=seed,
                                                               indexes=fake_indexes) 
             else:
-                if self.phase != 'test':
+                if self.phase == 'train':
                     self.image_real_paths, self.image_fake_paths = load_train_data(real_root_path=root_path, fake_root_path=fake_root_path,
-                                                          phase=phase, seed=seed)   
+                                                          phase=phase, seed=seed)
+                    # self.image_paths = self.image_real_paths + self.image_fake_paths
+                    # self.labels = [0 for _ in self.image_real_paths] + [1 for _ in self.image_fake_paths]
+
+                    #只加载真实图像
+                    self.image_paths = self.image_real_paths
+                    self.labels = [0 for _ in self.image_real_paths]
+                    print(f'-total({phase}):{len(self.image_paths)}')
+
+                elif self.phase == 'val':
+                    self.image_real_paths, self.image_fake_paths = load_train_data(real_root_path=root_path, fake_root_path=fake_root_path,
+                                                          phase=phase, seed=seed)
                     self.image_paths = self.image_real_paths + self.image_fake_paths
-                    self.labels = [0 for _ in self.image_real_paths] + [1 for _ in self.image_fake_paths]                   
+                    self.labels = [0 for _ in self.image_real_paths] + [1 for _ in self.image_fake_paths]
+                    print(f'-total({phase}):{len(self.image_paths)}, real:{len(self.image_real_paths)},fake:{len(self.image_fake_paths)}')
                 else:
                     self.image_paths, self.labels = load_data(real_root_path=root_path, fake_root_path=fake_root_path,
                                                           phase=phase, seed=seed)    
@@ -699,12 +724,9 @@ class AIGCDetectionDataset(Dataset):
             is_success = is_success and rec_is_success
             image = calculate_dire(image, rec_image, phase=self.phase)    
 
-        transform_crop = A.Compose([A.PadIfNeeded(min_height=224, min_width=224, border_mode=cv2.BORDER_CONSTANT, value=0),
-            A.RandomCrop(height=224, width=224),])
-        image = transform_crop(image=image)['image']
 
-        transform_tensor = A.Compose([ToTensorV2()])
-        cutmix_img_be_aug = transform_tensor(image=image)['image']
+        image = transform_crop(image)
+        cutmix_img_be_aug = transform_tensor(image)# 数据增强之前的图像（加噪、jpeg等操作）
         
         # 测试后处理攻击
         if self.phase == 'test' and self.post_aug_mode is not None:
@@ -732,12 +754,12 @@ class AIGCDetectionDataset(Dataset):
         
         if self.phase == 'train' and random.random() < self.prob_aug: # 只在训练期间用
             # lam = random.uniform(0.0001, 1)
-            lam = random.choice([0.25, 0.5, 0.75])
+            lam = random.choice([0.25, 0.5, 0.75, 1])
             mask = generate_patch_mask(image, lam)
             
             image, cutmix_img_be_aug, label, mask_label = process_aug_image(mask, prob_cutmix=self.prob_cutmix, prob_cutmixup_real_fake=self.prob_cutmixup_real_fake, 
                                              prob_cutmixup_real_rec=self.prob_cutmixup_real_rec, image_real_paths=self.image_real_paths, image_fake_paths=self.image_fake_paths,
-                                             fake_root_path=self.fake_root_path, transform=self.transform)   
+                                             fake_root_path=self.fake_root_path, transform=self.transform, lam=lam)
                 
             if image.numel() == 0:  # 检查是否是空张量
                 print(f"Empty data at index {i}, image path: {img_path}")
@@ -758,10 +780,7 @@ class AIGCDetectionDataset(Dataset):
             mask = mask.view(-1)  # 返回的是mask标签
         
         # print(f'image:{image.dtype}', flush=True)
-        # print(f'label:{label.dtype}')
-        # print(f'mask:{mask.dtype}', flush=True)
         
         cutmix_img_be_aug = cutmix_img_be_aug.type(torch.float32) / 255.0
-        # print(f'cutmix_img_be_aug:{cutmix_img_be_aug.dtype} ', flush=True)
         
         return image, label, mask, image_path, cutmix_img_be_aug # cutmix_img_be_aug为增强操作前的图片

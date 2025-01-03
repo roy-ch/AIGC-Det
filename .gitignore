@@ -1,0 +1,10 @@
+checkpoint/
+results/
+data_DRCT/*.png
+scripts/
+plots.ipynb
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+__pycache__/
+*/__pycache__/
+models/DTD

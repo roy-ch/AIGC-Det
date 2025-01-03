@@ -18,13 +18,15 @@ class Trainer(BaseModel):
         super(Trainer, self).__init__(opt)
         self.opt = opt
         self.model = get_model(opt)
-            
-        # Initialize all possible parameters in the final layer
-        for fc in self.model.fc:
-            try:
-                torch.nn.init.normal_(fc.weight.data, 0.0, opt.init_gain)
-            except:
-                pass
+
+        if 'unet' in self.opt.arch or 'maskrcnn' in self.opt.arch:
+            for module in self.model.modules():
+                try:
+                    torch.nn.init_normal_(module.weight.data, 0.0, opt.init_gain)
+                except:
+                    pass
+                
+            params = self.model.parameters()
 
         # xjw
         if opt.mask_plus_label:
@@ -113,7 +115,12 @@ class Trainer(BaseModel):
         
         # xjw
         if self.opt.mask_plus_label:
-            if self.mask.size()[1] != 256*256:
+            if 'unet' in self.opt.arch or 'maskrcnn' in self.opt.arch:
+                _mask_size = 224
+            else:
+                _mask_size = 256
+            if self.mask.size()[1] != _mask_size*_mask_size:
+
                 mask_size = (int(self.mask.size()[1] ** 0.5), int(self.mask.size()[1] ** 0.5))
                 self.output["mask"] = self.output["mask"].view(-1, 1, 256, 256)
                 self.output["mask"] = F.interpolate(self.output["mask"], size=mask_size, mode='bilinear', align_corners=False)
@@ -195,11 +202,8 @@ class Trainer(BaseModel):
             self.bce_mask_loss = self.loss_fn(masks, self.mask)
             self.lovasz_mask_loss = lovasz_softmax(sigmoid_masks, gd_masks, classes=[1])
             self.label_loss = self.loss_fn(logits, self.label)
-            self.loss = (0.5 - self.lovasz_weight) * self.bce_mask_loss +  self.lovasz_weight * self.lovasz_mask_loss + 0.5 * self.label_loss
-            
-            # print(f'self.loss_fn(masks, self.mask) :{self.loss_fn(masks, self.mask)} ')
-            # print(f'lovasz_hinge(masks, self.mask) :{lovasz_hinge(masks, self.mask)} ')
-            # print(f'self.loss_fn(logits, self.label) :{self.loss_fn(logits, self.label)} ')
+
+            self.loss = self.lovasz_mask_loss + self.label_loss ########
             
             # self.loss = 0.5 * self.loss_fn(masks, self.mask) + 0.5 * self.loss_fn(logits, self.label)
             # self.loss = self.loss_fn(masks, self.mask)

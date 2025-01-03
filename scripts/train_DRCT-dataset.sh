@@ -36,5 +36,6 @@ python ../train_DRCT-dataset.py --name $EXP_NAME --train_dataset $DATASET --feat
                 --prob_cutmixup_real_fake ${P_cutmixup_real_fake} \
                 --prob_cutmixup_real_rec  ${P_cutmixup_real_rec} \
                 --prob_cutmixup_real_real ${P_cutmixup_real_real} \
+                --arch CLIP:ViT-L/14 \
                 --visualize_masks \
 | tee ../checkpoint/log_DRCT-dataset.txt

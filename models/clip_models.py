@@ -8,12 +8,13 @@ import re
 
 # Model for localisation
 class CLIPModelLocalisation(nn.Module):
-    def __init__(self, name, intermidiate_layer_output = None, decoder_type = "conv-4", mask_plus_label=False):
+    def __init__(self, name, intermidiate_layer_output = None, decoder_type = "conv-4", mask_plus_label=False, cls_model=None):
         super(CLIPModelLocalisation, self).__init__()
         
         self.intermidiate_layer_output = intermidiate_layer_output
         self.decoder_type = decoder_type
         self.name = name # architecure
+        self.cls_model = cls_model
         
         if self.intermidiate_layer_output:
             assert "layer" in self.intermidiate_layer_output or "all" in self.intermidiate_layer_output or "xceptionnet" in self.intermidiate_layer_output
@@ -25,6 +26,7 @@ class CLIPModelLocalisation(nn.Module):
         self.mask_plus_label = mask_plus_label
         if self.mask_plus_label:
             self._set_cls_conv()
+            self._set_cls_mlp()
         
     def _set_cls_conv(self):
         # xjw
@@ -52,6 +54,13 @@ class CLIPModelLocalisation(nn.Module):
 
             # Fourth Conv2d Layer
             nn.Conv2d(256, 1, kernel_size=1, stride=1)  # [64, num_classes, 1, 1]
+        )
+
+    def _set_cls_mlp(self):
+        self.mlp_cls = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(64 * 256 * 256, 256),
+            nn.Linear(256, 1)
         )
 
     def _set_backbone(self):    
@@ -249,8 +258,12 @@ class CLIPModelLocalisation(nn.Module):
             
             # guided_feature = binary_map * torch.sigmoid(binary_map)
             guided_feature = feature * torch.sigmoid(binary_map)
-            
-            logits = self.conv_cls(guided_feature)
+
+            if self.cls_model == 'conv_cls':
+                logits = self.conv_cls(guided_feature)
+            elif self.cls_model == 'mlp_cls':
+                logits = self.mlp_cls(guided_feature)
+
             outputs["logit"] = torch.flatten(logits, start_dim=1).squeeze()
             
             return outputs
