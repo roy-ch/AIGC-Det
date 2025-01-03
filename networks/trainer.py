@@ -195,7 +195,7 @@ class Trainer(BaseModel):
             self.bce_mask_loss = self.loss_fn(masks, self.mask)
             self.lovasz_mask_loss = lovasz_softmax(sigmoid_masks, gd_masks, classes=[1])
             self.label_loss = self.loss_fn(logits, self.label)
-            self.loss = (0.5 - self.lovasz_weight) * self.bce_mask_loss +  self.lovasz_weight * self.lovasz_mask_loss + 0.5 * self.label_loss
+            self.loss = (0.6 - self.lovasz_weight) * self.bce_mask_loss +  self.lovasz_weight * self.lovasz_mask_loss + 0.4 * self.label_loss
             
             # print(f'self.loss_fn(masks, self.mask) :{self.loss_fn(masks, self.mask)} ')
             # print(f'lovasz_hinge(masks, self.mask) :{lovasz_hinge(masks, self.mask)} ')

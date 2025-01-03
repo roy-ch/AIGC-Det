@@ -13,5 +13,5 @@ def get_model(opt):
 
     assert name in VALID_NAMES
 
-    return CLIPModelLocalisation(name.split(':')[1], intermidiate_layer_output = layer, decoder_type=decoder_type, mask_plus_label=opt.mask_plus_label) 
+    return CLIPModelLocalisation(name.split(':')[1], intermidiate_layer_output = layer, decoder_type=decoder_type, mask_plus_label=opt.mask_plus_label, dwt=opt.dwt) 
     

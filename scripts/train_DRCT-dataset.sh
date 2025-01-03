@@ -1,4 +1,3 @@
- # --model_path /root/autodl-tmp/code/DeCLIP/checkpoint/V2/20241227/model_epoch_best.pth \
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 DATASET=DRCT-2M
@@ -13,7 +12,7 @@ echo "P_cutmixup_real_fake: $P_cutmixup_real_fake"
 echo "P_cutmixup_real_rec: $P_cutmixup_real_rec"
 echo "P_cutmixup_real_real: $P_cutmixup_real_real"
 
-SAVE_PATH=/root/autodl-tmp/code/DeCLIP/checkpoint/V2/
+SAVE_PATH=/root/autodl-tmp/code/AIGC-Det/checkpoint/V2/
 
 EXP_NAME=$(date +"%Y%m%d")
 
@@ -37,4 +36,5 @@ python ../train_DRCT-dataset.py --name $EXP_NAME --train_dataset $DATASET --feat
                 --prob_cutmixup_real_rec  ${P_cutmixup_real_rec} \
                 --prob_cutmixup_real_real ${P_cutmixup_real_real} \
                 --visualize_masks \
+                --dwt \
 | tee ../checkpoint/log_DRCT-dataset.txt

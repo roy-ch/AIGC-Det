@@ -24,6 +24,8 @@ class BaseOptions():
         parser.add_argument('--init_type', type=str, default='normal', help='network initialization (normal/xavier/kaiming/orthogonal)')
         parser.add_argument('--init_gain', type=float, default=0.02, help='scaling factor for normal, xavier and orthogonal.')
         
+        parser.add_argument('--dwt', action='store_true', help='whether to use dwt')
+        
         self.initialized = True
         return parser
 

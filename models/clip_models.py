@@ -5,10 +5,11 @@ import torch.nn.functional as F
 import models.networks.customnet as customnetworks
 from models.clip.model import ResidualAttentionBlock
 import re
+from torchvision import transforms
 
 # Model for localisation
 class CLIPModelLocalisation(nn.Module):
-    def __init__(self, name, intermidiate_layer_output = None, decoder_type = "conv-4", mask_plus_label=False):
+    def __init__(self, name, intermidiate_layer_output = None, decoder_type = "conv-4", mask_plus_label=False, dwt=False):
         super(CLIPModelLocalisation, self).__init__()
         
         self.intermidiate_layer_output = intermidiate_layer_output
@@ -25,6 +26,8 @@ class CLIPModelLocalisation(nn.Module):
         self.mask_plus_label = mask_plus_label
         if self.mask_plus_label:
             self._set_cls_conv()
+            
+        self.dwt = dwt
         
     def _set_cls_conv(self):
         # xjw
@@ -161,6 +164,16 @@ class CLIPModelLocalisation(nn.Module):
         output = input.permute(1, 2, 0)
         output = output.view(output.size()[0], output.size()[1], int(output.size()[2]**0.5), int(output.size()[2]**0.5))
         return output
+    
+    # dwt transform
+    def _preprocess_dwt(self, x, mode='symmetric', wave='bior1.3'):
+        '''
+        pip install pywavelets pytorch_wavelets
+        '''
+        from pytorch_wavelets import DWTForward, DWTInverse
+        DWT_filter = DWTForward(J=1, mode=mode, wave=wave).to(x.device)
+        Yl, Yh = DWT_filter(x)
+        return transforms.Resize([x.shape[-2], x.shape[-1]])(Yh[0][:, :, 2, :, :])
 
     def feature_extraction(self, x):
         if self.name == "RN50" or self.name=="ViT-L/14":
@@ -190,6 +203,10 @@ class CLIPModelLocalisation(nn.Module):
         return features
                 
     def forward(self, x):
+        # dwt
+        if self.dwt:
+            x = 1 * self._preprocess_dwt(x)
+        
         # Feature extraction
         features = self.feature_extraction(x)
         
