@@ -70,8 +70,8 @@ if __name__ == '__main__':
     visualize_mask=True ######
     if visualize_mask:
         # preparation for visualizing masks
-        os.makedirs(os.path.join('train_vis', 'DRCT'), exist_ok=True)
-        mask_save_path = os.path.join('train_vis', 'DRCT')
+        os.makedirs(os.path.join(opt.checkpoints_dir, opt.name, 'train_vis', 'DRCT'), exist_ok=True)
+        mask_save_path = os.path.join(opt.checkpoints_dir, opt.name, 'train_vis', 'DRCT')
         os.makedirs(mask_save_path, exist_ok=True)
         
     for epoch in range(opt.niter):
