@@ -261,15 +261,6 @@ if __name__ == '__main__':
                         early_stopping(acc, model)
 
                     model.save_networks(f'model_epoch_{epoch}_acc_{acc:.2f}.pth')
-                    if early_stopping.early_stop:
-                        cont_train = model.adjust_learning_rate()
-                        if cont_train:
-                            print("Learning rate dropped by 10, continue training...")
-                            early_stopping = EarlyStopping(patience=opt.earlystop_epoch, delta=-0.002, verbose=True)
-                        else:
-                            print("Early stopping.")
-                            break
-
 
         epoch_loss /= len(train_loader)
         if opt.fully_supervised:
@@ -326,5 +317,14 @@ if __name__ == '__main__':
             model.logits = []
             model.labels = []
 
+        if early_stopping.early_stop:
+            cont_train = model.adjust_learning_rate()
+            if cont_train:
+                print("Learning rate dropped by 10, continue training...")
+                early_stopping = EarlyStopping(patience=opt.earlystop_epoch, delta=-0.002, verbose=True)
+            else:
+                print("Early stopping.")
+                break
+                
         model.train()
         print()

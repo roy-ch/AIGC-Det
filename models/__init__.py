@@ -1,7 +1,7 @@
 from .clip_models import CLIPModelLocalisation
 
 from .unet import UNet
-from models.DTD.dtd import seg_dtd
+# from models.DTD.dtd import seg_dtd
 
 
 VALID_NAMES = [
