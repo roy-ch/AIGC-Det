@@ -24,7 +24,7 @@ class BaseOptions():
         parser.add_argument('--init_type', type=str, default='normal', help='network initialization (normal/xavier/kaiming/orthogonal)')
         parser.add_argument('--init_gain', type=float, default=0.02, help='scaling factor for normal, xavier and orthogonal.')
 
-        parser.add_argument('--cls_model', type=str, default='mlp_cls', help='classification model(e.g.:conv_cls/mlp_cls)')
+        parser.add_argument('--cls_model', type=str, default='conv_cls', help='classification model(e.g.:conv_cls/mlp_cls)')
         
         self.initialized = True
         return parser
@@ -42,33 +42,13 @@ class BaseOptions():
 
         return parser.parse_args()
 
-    def print_options(self, opt):
-        message = ''
-        message += '----------------- Options ---------------\n'
-        for k, v in sorted(vars(opt).items()):
-            comment = ''
-            default = self.parser.get_default(k)
-            if v != default:
-                comment = '\t[default: %s]' % str(default)
-            message += '{:>25}: {:<30}{}\n'.format(str(k), str(v), comment)
-        message += '----------------- End -------------------'
-        print(message)
-
-        # save to the disk
-        expr_dir = os.path.join(opt.checkpoints_dir, opt.name)
-        os.makedirs(expr_dir, exist_ok=True)
-        file_name = os.path.join(expr_dir, 'opt.txt')
-        with open(file_name, 'wt') as opt_file:
-            opt_file.write(message)
-            opt_file.write('\n')
-
     def parse(self, print_options=True):
 
         opt = self.gather_options()
         opt.data_label = self.data_label
 
-        if print_options:
-            self.print_options(opt)
+        # if print_options:
+        #     self.print_options(opt)
 
         # set gpu ids
         str_ids = opt.gpu_ids.split(',')

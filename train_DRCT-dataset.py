@@ -25,11 +25,34 @@ def get_val_opt(opt):
     val_opt.data_label = 'valid'
     return val_opt
 
+def print_options(opt, output_dir):
+    message = ''
+    message += '----------------- Options ---------------\n'
+    for k, v in sorted(vars(opt).items()):
+        comment = ''
+        default = self.parser.get_default(k)
+        if v != default:
+            comment = '\t[default: %s]' % str(default)
+        message += '{:>25}: {:<30}{}\n'.format(str(k), str(v), comment)
+    message += '----------------- End -------------------'
+    print(message)
+
+    # save
+    os.makedirs(output_dir, exist_ok=True)
+    file_name = os.path.join(output_dir, 'opt.txt')
+    with open(file_name, 'wt') as opt_file:
+        opt_file.write(message)
+        opt_file.write('\n')
 
 if __name__ == '__main__':
     torch.multiprocessing.set_sharing_strategy('file_system')
 
     opt = TrainOptions().parse(print_options=False)
+
+    # 训练结果存放路径
+    train_result_path = os.path.join(opt.checkpoints_dir, f"{opt.train_dataset}_{opt.arch}_aug{opt.prob_aug}_cutmix{opt.prob_cutmix}"
+                                                          f"_fake{opt.prob_cutmixup_real_fake}_rec{opt.prob_cutmixup_real_rec}")
+    print_options(opt, train_result_path)
 
     val_opt = get_val_opt(opt)
     is_one_hot = False
@@ -60,8 +83,8 @@ if __name__ == '__main__':
                                     )
     eval_loader = DataLoader(xdl_eval, batch_size=opt.batch_size, shuffle=False, num_workers=opt.num_threads)
 
-    train_writer = SummaryWriter(os.path.join(opt.checkpoints_dir, opt.name, "train"))
-    val_writer = SummaryWriter(os.path.join(opt.checkpoints_dir, opt.name, "val"))
+    train_writer = SummaryWriter(os.path.join(train_result_path, "train"))
+    val_writer = SummaryWriter(os.path.join(train_result_path, "val"))
         
     early_stopping = EarlyStopping(patience=opt.earlystop_epoch, delta=-0.001, verbose=True)
     start_time = time.time()
@@ -70,8 +93,8 @@ if __name__ == '__main__':
     visualize_mask=True ######
     if visualize_mask:
         # preparation for visualizing masks
-        os.makedirs(os.path.join(opt.checkpoints_dir, opt.name, 'train_vis', 'DRCT'), exist_ok=True)
-        mask_save_path = os.path.join(opt.checkpoints_dir, opt.name, 'train_vis', 'DRCT')
+        os.makedirs(os.path.join(train_result_path, 'train_vis', 'DRCT'), exist_ok=True)
+        mask_save_path = os.path.join(train_result_path, 'train_vis', 'DRCT')
         os.makedirs(mask_save_path, exist_ok=True)
         
     for epoch in range(opt.niter):
@@ -103,8 +126,7 @@ if __name__ == '__main__':
                     train_writer.add_scalar('loss', model.loss, model.total_steps)
                     
                 pbar.update(1)
-                
-                
+
                 if model.total_steps == 0 or model.total_steps % 500 == 0:
                     ####### 可视化
                     masks_logits = model.output["mask"]
@@ -185,7 +207,7 @@ if __name__ == '__main__':
                                 save_path=mask_save_path,
                                 file_name=file_name,
                             )
-
+                # 计算val acc
                 if model.total_steps % (len(train_loader) // 3) == 0:
                     # Validation
                     model.eval()
@@ -255,12 +277,12 @@ if __name__ == '__main__':
                         if ap > best_iou:
                             print('saving best model at the end of epoch %d' % (epoch))
                             print(ap, best_iou)
-                            # model.save_networks(f'model_best_epoch_{epoch}_acc_{acc}.pth' )
+                            model.save_networks(f'model_best_epoch.pth' )
                             best_iou = ap
 
                         early_stopping(acc, model)
 
-                    model.save_networks(f'model_epoch_{epoch}_acc_{acc:.2f}.pth')
+                    model.save_networks(f'model_last_epoch.pth')
 
         epoch_loss /= len(train_loader)
         if opt.fully_supervised:
@@ -316,7 +338,7 @@ if __name__ == '__main__':
         
             model.logits = []
             model.labels = []
-
+            
         if early_stopping.early_stop:
             cont_train = model.adjust_learning_rate()
             if cont_train:
