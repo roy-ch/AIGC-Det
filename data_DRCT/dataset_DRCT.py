@@ -677,15 +677,16 @@ class AIGCDetectionDataset(Dataset):
                     self.labels = [0 for _ in self.image_real_paths]
                     print(f'-total({phase}):{len(self.image_paths)}')
 
-                elif self.phase == 'val':
-                    self.image_real_paths, self.image_fake_paths = load_train_data(real_root_path=root_path, fake_root_path=fake_root_path,
-                                                          phase=phase, seed=seed)
-                    self.image_paths = self.image_real_paths + self.image_fake_paths
-                    self.labels = [0 for _ in self.image_real_paths] + [1 for _ in self.image_fake_paths]
-                    print(f'-total({phase}):{len(self.image_paths)}, real:{len(self.image_real_paths)},fake:{len(self.image_fake_paths)}')
+                # elif self.phase == 'val':
+                #     self.image_real_paths, self.image_fake_paths = load_train_data(real_root_path=root_path, fake_root_path=fake_root_path,
+                #                                           phase=phase, seed=seed)
+                #     self.image_paths = self.image_real_paths + self.image_fake_paths
+                #     self.labels = [0 for _ in self.image_real_paths] + [1 for _ in self.image_fake_paths]
+                #     print(f'-total({phase}):{len(self.image_paths)}, real:{len(self.image_real_paths)},fake:{len(self.image_fake_paths)}')
                 else:
                     self.image_paths, self.labels = load_data(real_root_path=root_path, fake_root_path=fake_root_path,
-                                                          phase=phase, seed=seed)    
+                                                          phase=phase, seed=seed)
+                    print(f'-total({phase}):{len(self.image_paths)}, real:{len(self.image_real_paths)},fake:{len(self.image_fake_paths)}')
 
 
             self.labels = [int(label > 0)for label in self.labels] if self.num_classes == 2 else self.labels
