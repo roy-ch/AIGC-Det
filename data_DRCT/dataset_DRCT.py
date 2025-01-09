@@ -230,7 +230,6 @@ def get_class_name_by_path(image_path):
 
     return class_name
 
-
 def load_DRCT_2M(real_root_path='/disk4/chenby/dataset/MSCOCO',
                  fake_root_path='/disk4/chenby/dataset/AIGC_MSCOCO',
                  fake_indexes='1,2,3,4,5,6', phase='train', val_split=0.1,
@@ -250,49 +249,7 @@ def load_DRCT_2M(real_root_path='/disk4/chenby/dataset/MSCOCO',
             fake_paths += fake_paths_t
             fake_labels += fake_labels_t
     else:  # 把所有的val2017当最终的测试集
-        real_paths = sorted(glob.glob(f"{real_root_path}/val2017/*.*"))
-        real_labels = [0 for _ in range(len(real_paths))]
-        fake_paths = []
-        fake_labels = []
-        for i, index in enumerate(fake_indexes):
-            fake_paths_t = sorted(glob.glob(f"{fake_root_path}/{LABEL2CLASS_MAPPING[index]}/val2017/*.*"))
-            fake_labels_t = [i + 1 for _ in range(len(fake_paths_t))]
-            fake_paths += fake_paths_t
-            fake_labels += fake_labels_t
-    image_paths = real_paths + fake_paths
-    labels = real_labels + fake_labels
-
-    # 各个类别数量统计
-    class_count_mapping = {cls: 0 for cls in range(len(fake_indexes) + 1)}
-    for label in labels:
-        class_count_mapping[label] += 1
-    class_name_mapping = {0: 'real'}
-    for i, fake_index in enumerate(fake_indexes):
-        class_name_mapping[i + 1] = LABEL2CLASS_MAPPING[fake_index]
-    print(f"{phase}:{class_count_mapping}, total:{len(image_paths)}, class_name_mapping:{class_name_mapping}")
-
-    return image_paths, labels
-
-
-def load_DRCT_2M(real_root_path='/disk4/chenby/dataset/MSCOCO',
-                 fake_root_path='/disk4/chenby/dataset/AIGC_MSCOCO',
-                 fake_indexes='1,2,3,4,5,6', phase='train', val_split=0.1,
-                 seed=2022):
-    fake_indexes = [int(index) for index in fake_indexes.split(',')]
-    if phase != 'test':  # 训练集和验证机按照 9：1 划分
-        real_paths = sorted(glob.glob(f"{real_root_path}/train2017/*.*"))
-        real_labels = [0 for _ in range(len(real_paths))]
-        real_paths, real_labels = split_data(real_paths, real_labels, val_split=val_split, phase=phase, seed=seed)
-        fake_paths = []
-        fake_labels = []
-        for i, index in enumerate(fake_indexes):
-            fake_paths_t = sorted(glob.glob(f"{fake_root_path}/{LABEL2CLASS_MAPPING[index]}/train2017/*.*"))
-            fake_labels_t = [i + 1 for _ in range(len(fake_paths_t))]
-            fake_paths_t, fake_labels_t = split_data(fake_paths_t, fake_labels_t, val_split=val_split, phase=phase,
-                                                     seed=seed)
-            fake_paths += fake_paths_t
-            fake_labels += fake_labels_t
-    else:  # 把所有的val2017当最终的测试集
+        print(real_root_path, flush=True)
         real_paths = sorted(glob.glob(f"{real_root_path}/val2017/*.*"))
         real_labels = [0 for _ in range(len(real_paths))]
         fake_paths = []
@@ -620,6 +577,20 @@ def process_aug_image(mask, prob_cutmix=0.5, prob_cutmixup_real_fake=0.2, prob_c
         
     return img_aug, img_be_aug, aug_label, aug_mask_label # 增强后的图像，增强操作前的图像，混合后的label标签，混合后的mask
 
+
+def check_and_extract_path(paths_string, target_folder):
+    # 将逗号分隔的字符串转换为列表
+    paths = paths_string.split(',')
+
+    # 遍历每个路径
+    for full_path in paths:
+        parts = full_path.split(os.sep)
+        if target_folder in parts:
+            index = parts.index(target_folder)
+            extracted_path = os.sep.join(parts[:index + 1])
+            return extracted_path
+    raise ValueError(f"没有路径包含目标文件夹: {target_folder}")
+
 class AIGCDetectionDataset(Dataset):
     def __init__(self, root_path='/disk4/chenby/dataset/MSCOCO', fake_root_path='/disk4/chenby/dataset/DRCT-2M',
                  fake_indexes='1,2,3,4,5,6', phase='train', is_one_hot=False, seed=2021,
@@ -684,9 +655,12 @@ class AIGCDetectionDataset(Dataset):
                 #     self.labels = [0 for _ in self.image_real_paths] + [1 for _ in self.image_fake_paths]
                 #     print(f'-total({phase}):{len(self.image_paths)}, real:{len(self.image_real_paths)},fake:{len(self.image_fake_paths)}')
                 else:
-                    self.image_paths, self.labels = load_data(real_root_path=root_path, fake_root_path=fake_root_path,
-                                                          phase=phase, seed=seed)
-                    print(f'-total({phase}):{len(self.image_paths)}, real:{len(self.image_real_paths)},fake:{len(self.image_fake_paths)}')
+                    target_folder = 'DRCT-2M'
+                    val_fake_root_path = check_and_extract_path(fake_root_path, target_folder)
+                    self.image_paths, self.labels = load_DRCT_2M(real_root_path=root_path,
+                                                                 fake_root_path=val_fake_root_path,
+                                                                 fake_indexes=fake_indexes, phase=phase, seed=seed)
+                    print(f'-total({phase}):{len(self.image_paths)}, real:{len(root_path)},fake:{len(val_fake_root_path)}')
 
 
             self.labels = [int(label > 0)for label in self.labels] if self.num_classes == 2 else self.labels

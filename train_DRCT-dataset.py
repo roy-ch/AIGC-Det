@@ -17,6 +17,9 @@ from data_DRCT.transform import create_train_transforms, create_val_transforms
 import torchvision
 from torchvision.transforms import functional as F
 
+from dataset_paths import DETECTION_DATASET_PATHS, LOCALISATION_DATASET_PATHS, MASKED_DETECTION_DATASET_PATHS, MASKED_DETECTION_DATASET_PATHS_V2
+from data_DRCT.dataset_DRCT import CLASS2LABEL_MAPPING
+
 from tqdm import tqdm
 from utils.visualize import *
 
@@ -77,11 +80,11 @@ if __name__ == '__main__':
     
     train_loader = DataLoader(xdl, batch_size=opt.batch_size, shuffle=sampler is None, num_workers=opt.num_threads, sampler=sampler)
 
-    xdl_eval = AIGCDetectionDataset(opt.root_path, fake_root_path=opt.fake_root_path, fake_indexes=opt.fake_indexes, phase='val',
-                                    num_classes=opt.num_classes, inpainting_dir=opt.inpainting_dir, is_dire=opt.is_dire,
-                                    transform=create_val_transforms(size=opt.input_size, is_crop=opt.is_crop)
-                                    )
-    eval_loader = DataLoader(xdl_eval, batch_size=opt.batch_size, shuffle=False, num_workers=opt.num_threads)
+    # xdl_eval = AIGCDetectionDataset(opt.root_path, fake_root_path=opt.fake_root_path, fake_indexes=opt.fake_indexes, phase='val',
+    #                                 num_classes=opt.num_classes, inpainting_dir=opt.inpainting_dir, is_dire=opt.is_dire,
+    #                                 transform=create_val_transforms(size=opt.input_size, is_crop=opt.is_crop)
+    #                                 )
+    # eval_loader = DataLoader(xdl_eval, batch_size=opt.batch_size, shuffle=False, num_workers=opt.num_threads)
 
     train_writer = SummaryWriter(os.path.join(train_result_path, "train"))
     val_writer = SummaryWriter(os.path.join(train_result_path, "val"))
@@ -89,6 +92,13 @@ if __name__ == '__main__':
     early_stopping = EarlyStopping(patience=opt.earlystop_epoch, delta=-0.001, verbose=True)
     start_time = time.time()
     best_iou = 0
+    
+    if opt.fully_supervised:
+        dataset_paths = LOCALISATION_DATASET_PATHS
+    elif opt.mask_plus_label:
+        dataset_paths = MASKED_DETECTION_DATASET_PATHS_V2
+    else:
+        dataset_paths = DETECTION_DATASET_PATHS
     
     visualize_mask=True ######
     if visualize_mask:
@@ -111,11 +121,12 @@ if __name__ == '__main__':
                 model.optimize_parameters()
                 
                 if opt.mask_plus_label:
-                    bce_mask_loss_value = round(model.bce_mask_loss.item(), 4)
+                    # bce_mask_loss_value = round(model.bce_mask_loss.item(), 4)
                     lovasz_mask_loss_value = round(model.lovasz_mask_loss.item(), 4)
                     label_loss_value = round(model.label_loss.item(), 4)
                     loss_value = round(model.loss.item(), 4)
-                    pbar.set_postfix(bce_mask_loss=bce_mask_loss_value, lovasz_mask_loss=lovasz_mask_loss_value, label_loss=label_loss_value, loss=loss_value)
+                    pbar.set_postfix(lovasz_mask_loss=lovasz_mask_loss_value, label_loss=label_loss_value, loss=loss_value)
+                    # pbar.set_postfix(bce_mask_loss=bce_mask_loss_value, lovasz_mask_loss=lovasz_mask_loss_value, label_loss=label_loss_value, loss=loss_value)
                 else:
                     loss_value = round(model.loss.item(), 4)
                     pbar.set_postfix(loss=loss_value)
@@ -263,7 +274,7 @@ if __name__ == '__main__':
             model.logits = []
             model.labels = []
 
-        # Validation
+        # 计算val acc
         model.eval()
         print('Validation')
         if opt.fully_supervised:
@@ -288,37 +299,111 @@ if __name__ == '__main__':
             # save best model weights or those at save_epoch_freq
             if mean_iou > best_iou:
                 print('saving best model at the end of epoch %d' % (epoch))
-                model.save_networks(train_result_path, 'model_epoch_best.pth' )
+                model.save_networks(train_result_path, 'model_epoch_best.pth')
                 best_iou = mean_iou
 
             early_stopping(mean_iou, model)
         elif opt.mask_plus_label:
-            ious, f1_best, f1_fixed, ap, acc, acc_best_thres, best_thres, _ = validate_masked_detection_v2(
-                model.model, eval_loader)
-            mean_iou = sum(ious) / len(ious)
-            val_writer.add_scalar('iou', mean_iou, model.total_steps)
-            print(f"(Val @ epoch {epoch}) IOU: {round(mean_iou, 2)}")
+#             ious, f1_best, f1_fixed, ap, acc, acc_best_thres, best_thres, _ = validate_masked_detection_v2(
+#                 model.model, eval_loader)
+#             mean_iou = sum(ious) / len(ious)
+#             val_writer.add_scalar('iou', mean_iou, model.total_steps)
+#             print(f"(Val @ epoch {epoch}) IOU: {round(mean_iou, 2)}")
 
-            mean_f1_best = sum(f1_best) / len(f1_best)
-            val_writer.add_scalar('F1_best', mean_f1_best, model.total_steps)
-            print(f"(Val @ epoch {epoch}) F1 best: {round(mean_f1_best, 4)}")
+#             mean_f1_best = sum(f1_best) / len(f1_best)
+#             val_writer.add_scalar('F1_best', mean_f1_best, model.total_steps)
+#             print(f"(Val @ epoch {epoch}) F1 best: {round(mean_f1_best, 4)}")
 
-            mean_f1_fixed = sum(f1_fixed) / len(f1_fixed)
-            val_writer.add_scalar('F1_fixed', mean_f1_fixed, model.total_steps)
-            print(f"(Val @ epoch {epoch}) F1 fixed: {round(mean_f1_fixed, 4)}")
+#             mean_f1_fixed = sum(f1_fixed) / len(f1_fixed)
+#             val_writer.add_scalar('F1_fixed', mean_f1_fixed, model.total_steps)
+#             print(f"(Val @ epoch {epoch}) F1 fixed: {round(mean_f1_fixed, 4)}")
 
-            val_writer.add_scalar('accuracy', acc, model.total_steps)
-            val_writer.add_scalar('ap', ap, model.total_steps)
-            print(f"(Val @ epoch {epoch}) ACC: {acc}; ACC_BEST_THRES: {acc_best_thres}; AP: {ap}")
+#             val_writer.add_scalar('accuracy', acc, model.total_steps)
+#             val_writer.add_scalar('ap', ap, model.total_steps)
+#             print(f"(Val @ epoch {epoch}) ACC: {acc}; ACC_BEST_THRES: {acc_best_thres}; AP: {ap}")
 
+#             # save best model weights or those at save_epoch_freq
+#             if acc > best_iou:
+#                 print('saving best model at the end of epoch %d' % (epoch))
+
+#                 model.save_networks(train_result_path, 'model_epoch_best.pth')
+#                 best_iou = acc
+
+#             early_stopping(acc, model)
+            test_iou = []
+            test_f1_best = []
+            test_f1_fixed = []
+            test_ap = []
+            test_acc = []
+            for dataset_path in (dataset_paths):
+                print(f"Testing on {dataset_path['key']}")
+                opt.fake_indexes = str(CLASS2LABEL_MAPPING[dataset_path['key']])
+                opt.root_path = "/root/autodl-tmp/AIGC_data/MSCOCO"
+                
+                xdl_eval = AIGCDetectionDataset(opt.root_path, fake_root_path=opt.fake_root_path, fake_indexes=opt.fake_indexes, phase='test',
+                                num_classes=opt.num_classes, inpainting_dir=opt.inpainting_dir, is_dire=opt.is_dire,
+                                transform=create_val_transforms(size=opt.input_size, is_crop=opt.is_crop)
+                                )
+
+                test_loader = DataLoader(xdl_eval, batch_size=opt.batch_size, shuffle=False, num_workers=opt.num_threads)
+
+                if opt.visualize_masks:
+                    test_mask_save_path = os.path.join(train_result_path, 'test_vis', 'DRCT')
+                    os.makedirs(test_mask_save_path, exist_ok=True)
+                    ious, f1_best, f1_fixed, mean_ap, mean_acc, mean_acc_best_th, best_thres, all_img_paths = validate_masked_detection_v2(model.model, test_loader, visualize_mask=True, output_folder=test_mask_save_path, dataset_name=dataset_path['key'])
+                else:
+                    ious, f1_best, f1_fixed, mean_ap, mean_acc, mean_acc_best_th, best_thres, all_img_paths = validate_masked_detection_v2(model.model, test_loader)
+
+                mean_iou = sum(ious)/len(ious)
+                mean_f1_best = sum(f1_best)/len(f1_best)
+                mean_f1_fixed = sum(f1_fixed)/len(f1_fixed)
+
+                test_iou.append(mean_iou)
+                print(f"(Val @ dataset {dataset_path['key']} @ epoch {epoch}) IOU: {round(mean_iou, 2)}")
+
+                test_f1_best.append(mean_f1_best)
+                print(f"(Val @ dataset {dataset_path['key']} @ epoch {epoch}) F1 Best: {round(mean_f1_best, 4)}")
+
+                test_f1_fixed.append(mean_f1_fixed)
+                print(f"(Val @ dataset {dataset_path['key']} @ epoch {epoch}) F1 Fixed: {round(mean_f1_fixed, 4)}")
+
+                test_ap.append(mean_ap)
+                print(f"(Val @ dataset {dataset_path['key']} @ epoch {epoch}) AP: {round(mean_ap, 4)}")
+
+                test_acc.append(mean_acc)
+                print(f"(Val @ dataset {dataset_path['key']} @ epoch {epoch}) ACC: {round(mean_acc, 4)}")
+                    
+                    
+            mean_test_iou = sum(test_iou)/len(test_iou)
+            print(f"(Val @ dataset MEAN @ epoch {epoch}) IOU: {round(mean_test_iou, 2)}")
+            
+            mean_test_f1_best = sum(test_f1_best)/len(test_f1_best)
+            print(f"(Val @ dataset MEAN @ epoch {epoch}) F1_best: {round(mean_test_f1_best, 4)}")
+            
+            mean_test_f1_fixed = sum(test_f1_fixed)/len(test_f1_fixed)
+            print(f"(Val @ dataset MEAN @ epoch {epoch}) F1_fixed: {round(mean_test_f1_fixed, 4)}")
+            
+            mean_test_ap = sum(test_ap)/len(test_ap)
+            print(f"(Val @ dataset MEAN @ epoch {epoch}) AP: {round(mean_test_ap, 4)}")
+            
+            mean_test_acc = sum(test_acc)/len(test_acc)
+            print(f"(Val @ dataset MEAN @ epoch {epoch}) ACC: {round(mean_test_acc, 4)}")
+            
+            val_writer.add_scalar('iou', mean_test_iou, model.total_steps)
+            val_writer.add_scalar('F1_best', mean_test_f1_best, model.total_steps)
+            val_writer.add_scalar('F1_fixed', mean_test_f1_fixed, model.total_steps)
+            val_writer.add_scalar('AP', mean_test_ap, model.total_steps)
+            val_writer.add_scalar('ACC', mean_test_acc, model.total_steps)
+            
             # save best model weights or those at save_epoch_freq
-            if acc > best_iou:
+            if mean_test_acc > best_iou:
                 print('saving best model at the end of epoch %d' % (epoch))
 
-                model.save_networks(train_result_path, f'model_epoch_best.pth')
-                best_iou = acc
+                model.save_networks(train_result_path, 'model_epoch_best.pth')
+                best_iou = mean_test_acc
 
-            early_stopping(acc, model)
+            early_stopping(mean_test_acc, model)
+
         else:
             ap, r_acc, f_acc, acc, _ = validate(model.model, eval_loader)
             val_writer.add_scalar('accuracy', acc, model.total_steps)
@@ -329,7 +414,7 @@ if __name__ == '__main__':
             if ap > best_iou:
                 print('saving best model at the end of epoch %d' % (epoch))
                 print(ap, best_iou)
-                model.save_networks(train_result_path, f'model_epoch_best.pth')
+                model.save_networks(train_result_path, f'model_best_epoch.pth')
                 best_iou = ap
 
             early_stopping(acc, model)
@@ -344,6 +429,6 @@ if __name__ == '__main__':
             else:
                 print("Early stopping.")
                 break
-                
+
         model.train()
         print()
