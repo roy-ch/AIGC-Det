@@ -31,12 +31,8 @@ class AbstractDataset(Dataset):
                 post_funcs = None,
                 ) -> None:
         super().__init__()
-        self.is_DRCT = is_DRCT
-        if self.is_DRCT:
-            self.tp_path = self._init_dataset_path_DRCT(path)
-            self.gt_path = None
-        else:
-            self.tp_path, self.gt_path = self._init_dataset_path(path)
+
+        self.tp_path, self.gt_path = self._init_dataset_path(path)
         
         if is_padding == True and is_resizing == True:
             raise AttributeError("is_padding and is_resizing can not be True at the same time")

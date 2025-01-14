@@ -94,6 +94,9 @@ def generate_patch_mask(H, W, lam):
 
     patch_H_number = 4
     patch_W_number = 4
+    
+    patch_size_H = H / patch_H_number
+    patch_size_W = W / patch_W_number
 
     # 初始化一个全1的 mask，与图像大小相同
     mask = np.full((H, W, 1), 1, dtype=np.float32)
@@ -107,11 +110,11 @@ def generate_patch_mask(H, W, lam):
     for idx in zero_indices:
         row = idx // patch_W_number
         col = idx % patch_W_number
-        start_y = row * patch_size
-        start_x = col * patch_size
+        start_y = int(row * patch_size_H)
+        start_x = int(col * patch_size_W)
 
         # 将对应的区域置为 0
-        mask[start_y:start_y + patch_size, start_x:start_x + patch_size] = 0
+        mask[start_y:start_y + int(patch_size_H), start_x:start_x + int(patch_size_W)] = 0
 
     return mask
 
@@ -270,11 +273,11 @@ def random_crop_dual(img1, img2, crop_size=(224, 224)):
 
 
 
-def cutmix_data(img1_path=None, img2_path=None, label1=0, label2=1, mask=None, lam=0):
+def cutmix_data(img1_path=None, img2_path=None, label1=0, label2=1, lam=0):
     """
     :cutmix 
-    :输入两个图像的路径
-    :param mask: 混合 mask
+    :img1_path, img2_path:输入两个图像的路径
+    :lam:混合比例
     return: 返回混合图像 (Tensor)
     """
 
@@ -283,15 +286,18 @@ def cutmix_data(img1_path=None, img2_path=None, label1=0, label2=1, mask=None, l
     ori_image = img1
     # 读取第二个图像
     img2 = np.array(Image.open(img2_path).convert('RGB')) # H W C
-
+    # print(f'img1:{img1.shape},img2:{img2.shape}')
     H1, W1 = img1.shape[:2]
     H2, W2 = img2.shape[:2]
 
     img1_label = np.full((img1.shape[0], img1.shape[1], 3), label1, dtype=np.float32)
         
-    mask = mask.numpy() 
-    mask_expanded = np.repeat(mask[..., None] , 3, axis=-1)
+    mask = generate_patch_mask(H1, W1, lam).squeeze(axis=-1) # (H, W, 1)去掉最后一维度
+    # print(f'mask:{mask.shape}')
+    mask_expanded = np.repeat(mask[..., None], 3, axis=-1)
+    # print(f'mask_expanded:{mask_expanded.shape}')
     if 'inpainting' in img2_path: # real和rec一起变换
+        # print(f'img1_path:{img1_path},img2_path:{img2_path}', flush=True)
         cutmix_img = mask_expanded * img1 + (1 - mask_expanded) * img2
         img2_label = np.full((img1.shape[0], img1.shape[1], 3), label2, dtype=np.float32)
         mask_label = mask_expanded * img1_label + (1 - mask_expanded) * img2_label
@@ -305,6 +311,7 @@ def cutmix_data(img1_path=None, img2_path=None, label1=0, label2=1, mask=None, l
         else:
             # 计算裁剪的高度和宽度
             new_lam = area / (H2 * W2)
+            print(f'new_lam:{new_lam}')
             cut_h = int(H2 * np.sqrt(new_lam))
             cut_w = int(W2 * np.sqrt(new_lam))
 
@@ -316,33 +323,29 @@ def cutmix_data(img1_path=None, img2_path=None, label1=0, label2=1, mask=None, l
             new_img2 = img2[y1:y1 + cut_h, x1:x1 + cut_w]
             new_mask = np.ones((cut_h, cut_w), dtype=np.float32)
 
+        print(f'im1:{img1.shape},NEW2:{new_img2.shape}, cut_w,cut_h:{cut_w},{cut_h}')
+
         # 确定粘贴位置
-        paste_y = np.random.randint(0, H1 - new_img2.shape[0])
-        paste_x = np.random.randint(0, W1 - new_img2.shape[1])
+        paste_y = np.random.randint(0, max(1, H1 - cut_h)) if H1 - cut_h > 0 else 0
+        paste_x = np.random.randint(0, max(1, W1 - cut_w)) if W1 - cut_w > 0 else 0
 
         cutmix_img = img1.copy()
+
+        # 确保目标区域足够大
+        paste_y = min(paste_y, cutmix_img.shape[0] - cut_h)
+        paste_x = min(paste_x, cutmix_img.shape[1] - cut_w)
+        print(f'new_img2:{new_img2.shape}, cutmix_img:{cutmix_img.shape}')
+        # 粘贴图像
         cutmix_img[paste_y:paste_y + cut_h, paste_x:paste_x + cut_w] = new_img2
 
         mask_label = img1_label.copy()
         mask_label[paste_y:paste_y + cut_h, paste_x:paste_x + cut_w] = 1 # 图像篡改，所以label为1
 
-    
-
     # print(f'img1.shape:{img1.shape}, mask:{mask.shape},img_labe1:{img1_label.shape}')
 
-    
     cutmix_label = 1 # 凡是cutmix的都是伪造的
-    
-    # cutmix_img_1 = Image.fromarray((cutmix_img).astype(np.uint8))  ###########
-    # cutmix_img_1.save("cutmix_img_1.png")###########
-    # mask_label_1 = Image.fromarray((mask_label).astype(np.uint8))  ###########
-    # mask_label_1.save("mask_label_1.png")###########
-    
-    # Save the tensor images after transformation
-    # save_image_from_tensor(cutmix_img_tensor, "cutmix_img_tensor.png")##########
-    # save_image_from_tensor(mask_label_tensor, "mask_label_tensor.png")###########
 
-    return ori_image, cutmix_image, cutmix_label, mask_label
+    return ori_image, cutmix_img, cutmix_label, mask_label
 
 
 def mixup_data(img1_path=None, img2_path=None, mask=None, alpha=None, transform=None):
@@ -393,23 +396,31 @@ if __name__ == '__main__':
     import random
     import torchvision.transforms as transforms
     from PIL import Image    
-    from transform import create_train_transforms
+    # from transform import create_train_transforms
     
+    # 生成 mask
     lam = 0.5
-    # 随机生成一个 224x224 的图像
-    img = torch.rand((3, 224, 224), dtype=torch.float32)
-    test_mask = generate_patch_mask(img, lam)
-    # test_mask = test_mask.expand(3, -1, -1)  # Shape becomes (3, H, W)
-    # cutmix_img, cutmix_label, mask_label = cutmix_data(
-    #     img1_path='/root/autodl-tmp/AIGC_data/MSCOCO/train2017/000000000025.jpg', 
-    #                        img2_path='/root/autodl-tmp/AIGC_data/DRCT-2M/stable-diffusion-inpainting/train2017/000000000061.png', label1=0, label2=1, mask=test_mask, transform=create_train_transforms(224)) 
-    cutmix_img_aug, cutmix_img_be_aug, aug_label, aug_mask_label = mixup_data(        
-    img1_path='/root/autodl-tmp/AIGC_data/MSCOCO/train2017/000000000025.jpg', 
-    img2_path='/root/autodl-tmp/AIGC_data/DRCT-2M/stable-diffusion-inpainting/train2017/000000000025.png', 
-    mask=test_mask, alpha=0.5, transform=create_train_transforms(224))
+    H, W = 225, 480
+    test_mask = generate_patch_mask(H, W, lam)
+
+    # 将 mask 转换为 0-255 的整数范围，以便保存为图像
+    test_mask = (test_mask * 255).astype(np.uint8)
+
+    # 保存为 PNG 图像
+    mask_image = Image.fromarray(test_mask.squeeze(), mode='L')
+    mask_image.save('test_mask.png')
     
-    print('cutmix_label:', aug_label)
+    ori_image, cutmix_img, cutmix_label, mask_label = cutmix_data(
+        img1_path='/root/autodl-tmp/AIGC_data/MSCOCO/train2017/000000000071.jpg', 
+        img2_path='/root/autodl-tmp/AIGC_data/DRCT-2M/stable-diffusion-v1-4/train2017/000000000025.jpg', 
+        label1=0, label2=1, lam=0.5) 
+#     cutmix_img_aug, cutmix_img_be_aug, aug_label, aug_mask_label = mixup_data(        
+#     img1_path='/root/autodl-tmp/AIGC_data/MSCOCO/train2017/000000000025.jpg', 
+#     img2_path='/root/autodl-tmp/AIGC_data/DRCT-2M/stable-diffusion-inpainting/train2017/000000000025.png', 
+#     mask=test_mask, alpha=0.5, transform=create_train_transforms(224))
     
-    # 保存 mask 为图像文件
-    mask_image = transforms.ToPILImage()(test_mask.squeeze(0))
-    mask_image.save("test_mask.png")  
+#     print('cutmix_label:', aug_label)
+    
+    # 保存 cutmix_img 为图像文件
+    cutmix_img = Image.fromarray(cutmix_img)
+    cutmix_img.save('cutmix_img.png')

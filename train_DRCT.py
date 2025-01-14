@@ -7,7 +7,8 @@ import argparse
 import datetime
 import numpy as np
 from pathlib import Path
-import timm.optim.optim_factory as optim_factory
+# import timm.optim.optim_factory as optim_factory
+import timm.optim as optim_factory
 from torch.utils.tensorboard import SummaryWriter
 import IMDLBenCo.training_scripts.utils.misc as misc
 
@@ -149,7 +150,6 @@ def get_args_parser():
     parser.add_argument('--dist_on_itp', action='store_true')
     parser.add_argument('--dist_url', default='env://',
                         help='url used to set up distributed training')
-
     args, remaining_args = parser.parse_known_args()
      # 获取对应的模型类
     model_class = MODELS.get(args.model)
@@ -261,7 +261,7 @@ def main(args, model_args):
                                    edge_width=args.edge_mask_width,
                                    post_funcs=post_function
                                    )
-        dataset_train = AIGCDetectionDataset(root_path=args.root_path, fake_root_path=args.fake_root_path, fake_indexes=[x for x in range(1, 17)],
+        dataset_test = AIGCDetectionDataset(root_path=args.root_path, fake_root_path=args.fake_root_path, fake_indexes=', '.join([str(x) for x in range(1, 17)]),
                                    phase='test', num_classes=args.num_classes,
                                    inpainting_dir=args.inpainting_dir, is_dire=args.is_dire,
                                    prob_aug=args.prob_aug, #prob_cutmix=opt.prob_cutmix,
@@ -360,6 +360,7 @@ def main(args, model_args):
     print("accumulate grad iterations: %d" % args.accum_iter)
     print("effective batch size: %d" % eff_batch_size)
 
+    # device_ids = [int(id) for id in gpu_str.split(',') if id.isdigit()]
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=args.find_unused_parameters)
         model_without_ddp = model.module

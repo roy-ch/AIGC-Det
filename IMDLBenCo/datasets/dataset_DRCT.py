@@ -14,9 +14,9 @@ from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 from scipy.ndimage.filters import gaussian_filter
 try:
-    from transform import create_train_transforms, create_val_transforms, create_sdie_transforms
+    from transform_DRCT import create_train_transforms, create_val_transforms, create_sdie_transforms
 except:
-    from .transform import create_train_transforms, create_val_transforms, create_sdie_transforms
+    from .transform_DRCT import create_train_transforms, create_val_transforms, create_sdie_transforms
 
 try:
     from mix_image import cutmix_data, mixup_data, generate_patch_mask, read_and_crop
@@ -529,7 +529,7 @@ def transform_tensor(image):
     transform_tensor = A.Compose([ToTensorV2()])
     return transform_tensor(image=image)['image']
 
-def process_aug_image(mask, prob_cutmixup_real_fake=0.2, prob_cutmixup_real_rec=0.4, image_real_paths=None, image_fake_paths=None, fake_root_path=None,
+def process_aug_image(prob_cutmixup_real_fake=0.2, prob_cutmixup_real_rec=0.4, image_real_paths=None, image_fake_paths=None, fake_root_path=None,
                       lam=None, img_loader = pil_loader, data_dict=None):
     real_img = choose_img(image_real_paths)
     img_path = real_img
@@ -544,7 +544,7 @@ def process_aug_image(mask, prob_cutmixup_real_fake=0.2, prob_cutmixup_real_rec=
             fake_path = find_img_path(fake_root_path, img_name, 'inpainting')
         ori_image = img_loader(fake_path)
         label = 1
-        mask_label = np.full((ori_image_shape[1], ori_image_shape[0], 3), label, dtype=np.float32)
+        mask_label = np.full((ori_image.size[1], ori_image.size[0], 3), label, dtype=np.float32)
         ori_image = np.array(ori_image) # H W C
 
         return ori_image, ori_image, label, mask_label, fake_path  # 增强操作前的图像，增强后的图像，混合后的label标签，混合后的mask, path
@@ -554,15 +554,15 @@ def process_aug_image(mask, prob_cutmixup_real_fake=0.2, prob_cutmixup_real_rec=
     if p < prob_cutmixup_real_fake: # 混合real和sd1.4, 随机抽取sd1.4
         filtered_paths = [path for path in image_fake_paths if "v1-4" in path]
         fake_img = random.choice(filtered_paths)
-        ori_image, cutmix_image, cutmix_label, mask_label = cutmix_data(img1_path=real_img, img2_path=fake_img, label1=0, label2=1, mask=mask, lam=lam)
+        ori_image, cutmix_image, cutmix_label, mask_label = cutmix_data(img1_path=real_img, img2_path=fake_img, label1=0, label2=1, lam=lam)
 
     elif p > prob_cutmixup_real_fake + prob_cutmixup_real_rec: # 混合real和real,随机抽取
         real_img2 = choose_img(image_real_paths)
-        ori_image, cutmix_image, cutmix_label, mask_label = cutmix_data(img1_path=real_img, img2_path=real_img2, label1=0, label2=0, mask=mask, lam=lam)
+        ori_image, cutmix_image, cutmix_label, mask_label = cutmix_data(img1_path=real_img, img2_path=real_img2, label1=0, label2=0, lam=lam)
 
     else: # 混合real和rec, 抽取对应的rec
         rec_img = find_img_path(fake_root_path, img_name, 'inpainting')
-        ori_image, cutmix_image, cutmix_label, mask_label = cutmix_data(img1_path=real_img, img2_path=rec_img, label1=0, label2=1, mask=mask, lam=lam)
+        ori_image, cutmix_image, cutmix_label, mask_label = cutmix_data(img1_path=real_img, img2_path=rec_img, label1=0, label2=1, lam=lam)
 
         
     return ori_image, cutmix_image, cutmix_label, mask_label, img_path # 增强操作前的图像，增强后的图像，混合后的label标签，混合后的mask
@@ -605,7 +605,7 @@ class AIGCDetectionDataset(Dataset):
         self.root_path = root_path  # real 图像的根目录
         self.phase = phase
         self.num_classes = len(fake_indexes.split(',')) + 1 if num_classes is None else num_classes
-        self.transform = transform
+        # self.transform = transform
         self.use_label = use_label
         self.regex = regex  # 数据过滤的正则表达式
         self.is_dire = is_dire  # training by DIRE
@@ -738,9 +738,9 @@ class AIGCDetectionDataset(Dataset):
 
         if self.phase == 'train' and random.random() < self.prob_aug:  # 只在训练期间用
             lam = random.choice([0.25, 0.5, 0.75, 1])
-            mask = generate_patch_mask(ori_image_shape[1], ori_image_shape[0], lam)
+            # mask = generate_patch_mask(ori_image_shape[1], ori_image_shape[0], lam)
 
-            ori_image, tp_img, label, gt_img, data_dict['name'] = process_aug_image(mask, prob_cutmixup_real_fake=self.prob_cutmixup_real_fake,
+            ori_image, tp_img, label, gt_img, data_dict['name'] = process_aug_image(prob_cutmixup_real_fake=self.prob_cutmixup_real_fake,
                                                                         prob_cutmixup_real_rec=self.prob_cutmixup_real_rec,
                                                                         image_real_paths=self.image_real_paths,
                                                                         image_fake_paths=self.image_fake_paths,
@@ -781,7 +781,7 @@ class AIGCDetectionDataset(Dataset):
             data_dict['edge_mask'] = gt_img_edge
             # ====================================
         # name of the image (mainly for testing)
-        basename = os.path.basename(tp_path)
+        # basename = os.path.basename(tp_path)
 
         # =========output=====================
         data_dict['image'] = tp_img
@@ -794,7 +794,7 @@ class AIGCDetectionDataset(Dataset):
 
         # 这里如果是（256， 384） 那么对应的图像是一个横着的 长的方块
         data_dict['shape'] = torch.tensor(tp_shape)  # (H, W) 经过data loader后会变成三维矩阵，第0维是batch_index
-        data_dict['name'] = basename
+        data_dict['name'] = image_path
 
         # 如果padding则需要单独return一个shape_mask
         if self.is_padding:

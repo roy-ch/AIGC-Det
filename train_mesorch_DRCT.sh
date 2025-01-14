@@ -11,24 +11,24 @@ echo "P_cutmixup_real_fake: $P_cutmixup_real_fake"
 echo "P_cutmixup_real_rec: $P_cutmixup_real_rec"
 echo "P_cutmixup_real_real: $P_cutmixup_real_real"
 
-CUDA_VISIBLE_DEVICES=0,1,2,3 \
+CUDA_VISIBLE_DEVICES=0,1 \
 torchrun  \
     --standalone    \
     --nnodes=1     \
-    --nproc_per_node=4 \
-./train.py \
+    --nproc_per_node=2 \
+./train_DRCT.py \
     --model Mesorch \
     --conv_pretrain True \
-    --seg_pretrain_path "/segformer/mit_b3.pth" \
-    --world_size 4 \
+    --seg_pretrain_path "./segformer/mit_b3.pth" \
+    --world_size 2 \
     --find_unused_parameters \
-    --batch_size 12 \
+    --batch_size 3 \
     --epochs 150 \
     --lr 1e-4 \
     --image_size 512 \
     --if_resizing \
-    --min_lr 5e-7 \
     --weight_decay 0.05 \
+    --is_DRCT \
     --prob_aug ${Prob_aug} \
     --prob_cutmixup_real_fake ${P_cutmixup_real_fake} \
     --prob_cutmixup_real_rec  ${P_cutmixup_real_rec} \
