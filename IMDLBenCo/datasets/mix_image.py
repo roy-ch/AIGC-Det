@@ -351,9 +351,9 @@ def cutmix_data(img1_path=None, img2_path=None, label1=0, label2=1, lam=0):
             raise e
 
         mask_label = img1_label.copy()
-        mask_label[paste_y:paste_y + cut_h, paste_x:paste_x + cut_w] = 1 * 255 # 图像篡改，所以label为1
+        mask_label[paste_y:paste_y + cut_h, paste_x:paste_x + cut_w] = label2 * 255 
 
-    cutmix_label = 1 # 凡是cutmix的都是伪造的
+    cutmix_label = 0 if label1 == 0 and label2 == 0 else 1
 
     return ori_image, cutmix_img, cutmix_label, mask_label
 
