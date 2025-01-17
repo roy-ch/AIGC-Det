@@ -1,6 +1,9 @@
-
+import os
+import numpy as np
 import math
 import sys
+import matplotlib.pyplot as plt
+
 from typing import Iterable
 
 import torch
@@ -37,6 +40,13 @@ def train_one_epoch(model: torch.nn.Module,
         
     total_step = len(data_loader)
     log_period = total_step / log_per_epoch_count
+    
+    # Ensure 'train_vis' directory exists under the same folder as the logs
+    # if log_writer is not None:
+    #     train_vis_dir = os.path.join(log_writer.log_dir, 'train_vis')
+    #     if not os.path.exists(train_vis_dir):
+    #         os.makedirs(train_vis_dir)
+
     # Start training
     for data_iter_step, data_dict in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
         
@@ -99,7 +109,23 @@ def train_one_epoch(model: torch.nn.Module,
                 log_writer.add_scalar(f"train_loss/{k}", v, epoch_1000x)
             # log_writer.add_scalar('train_loss/predict_loss', loss_predict_reduce, epoch_1000x)
             # log_writer.add_scalar('train_loss/edge_loss', edge_loss_reduce, epoch_1000x)
+         
+        # 训练可视化：每1000步进行保存
+        if (data_iter_step + 1) % 1000 == 0:
+            samples = data_dict['image']
+            mask = data_dict['mask']
 
+            if log_writer is not None:
+                epoch_1000x = int((data_iter_step / len(data_loader) + epoch) * 1000)
+                log_writer.add_images('train/image',  denormalize(samples), epoch_1000x)
+                log_writer.add_images('train/predict', mask_pred, epoch_1000x)
+                log_writer.add_images('train/predict_thresh_0.5', (mask_pred > 0.5) * 1.0, epoch_1000x)
+                log_writer.add_images('train/gt_mask', mask, epoch_1000x)
+
+                for k, v in visual_image.items():
+                    log_writer.add_images(f'train/{k}', v, epoch_1000x)
+        #------------------------------
+        
     samples = data_dict['image']
     mask = data_dict['mask']
     

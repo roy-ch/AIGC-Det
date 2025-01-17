@@ -256,8 +256,8 @@ def load_DRCT_2M(real_root_path='/disk4/chenby/dataset/MSCOCO',
     labels = real_labels + fake_labels
 
     # for test ############
-    # image_paths = real_paths[:16] #+ fake_paths[0]
-    # labels = real_labels[:16] #+ fake_labels[0]
+    # image_paths = real_paths[:16] #+ fake_paths[:16]
+    # labels = real_labels[:16] #+ fake_labels[:16]
 
     # 各个类别数量统计
     class_count_mapping = {cls: 0 for cls in range(len(fake_indexes) + 1)}
@@ -544,7 +544,7 @@ def process_aug_image(prob_cutmixup_real_fake=0.2, prob_cutmixup_real_rec=0.4, i
             fake_path = find_img_path(fake_root_path, img_name, 'inpainting')
         ori_image = img_loader(fake_path)
         label = 1
-        mask_label = np.full((ori_image.size[1], ori_image.size[0], 3), label, dtype=np.float32)
+        mask_label = np.full((ori_image.size[1], ori_image.size[0], 3), label * 255, dtype=np.float32)
         ori_image = np.array(ori_image) # H W C
 
         return ori_image, ori_image, label, mask_label, fake_path  # 增强操作前的图像，增强后的图像，混合后的label标签，混合后的mask, path
@@ -729,7 +729,7 @@ class AIGCDetectionDataset(Dataset):
         if self.use_label:
             label = self.labels[index]
 
-        gt_img = np.full((ori_image_shape[1], ori_image_shape[0], 3), label, dtype=np.float32) # mask, 根据label来产生
+        gt_img = np.full((ori_image_shape[1], ori_image_shape[0], 3), label * 255, dtype=np.float32) # mask, 根据label来产生
 
         tp_img = np.array(ori_image) # H W C
         gt_img = np.array(gt_img) # H W C

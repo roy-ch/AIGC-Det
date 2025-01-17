@@ -99,7 +99,7 @@ def generate_patch_mask(H, W, lam):
     patch_size_W = W / patch_W_number
 
     # 初始化一个全1的 mask，与图像大小相同
-    mask = np.full((H, W, 1), 1, dtype=np.float32)
+    mask = np.full((H, W, 1), 1, dtype=np.float32) 
 
     # 计算要置为0的patch数量，基于 lambda
     num_patches = patch_H_number * patch_W_number
@@ -290,56 +290,68 @@ def cutmix_data(img1_path=None, img2_path=None, label1=0, label2=1, lam=0):
     H1, W1 = img1.shape[:2]
     H2, W2 = img2.shape[:2]
 
-    img1_label = np.full((img1.shape[0], img1.shape[1], 3), label1, dtype=np.float32)
+    img1_label = np.full((img1.shape[0], img1.shape[1], 3), label1 * 255, dtype=np.float32)
         
     mask = generate_patch_mask(H1, W1, lam).squeeze(axis=-1) # (H, W, 1)去掉最后一维度
     mask_expanded = np.repeat(mask[..., None], 3, axis=-1)
     
     if 'inpainting' in img2_path: # real和rec一起变换
         cutmix_img = mask_expanded * img1 + (1 - mask_expanded) * img2
-        img2_label = np.full((img1.shape[0], img1.shape[1], 3), label2, dtype=np.float32)
+        img2_label = np.full((img1.shape[0], img1.shape[1], 3), label2 * 255, dtype=np.float32)
         mask_label = mask_expanded * img1_label + (1 - mask_expanded) * img2_label
-    else:
+    else:       
         # 根据lam计算图2需要裁剪的大小
         area = H1 * W1 * lam
-        if area > H2 * W2: # 若图2的面积不够裁剪，把整个图2贴上去
-            new_img2 = img2
-            new_mask = np.ones((H2, W2), dtype=np.float32)
-            cut_h, cut_w = min(H1, H2), min(W1, W2)  # 确保不超过目标图像尺寸
+        # 取两张图最小的h、w
+        min_h = min(H1, H2)
+        min_w = min(W1, W2)
+
+        # 计算裁剪的高度和宽度
+        new_lam = area / (min_h * min_w)
+        if new_lam >= 1:
+            cut_h = min_h
+            cut_w = min_w
+        else:                                                        
+            cut_h = int(min_h * np.sqrt(new_lam))
+            cut_w = int(min_w * np.sqrt(new_lam))
+
+        # 限制裁剪尺寸不超过目标图像尺寸
+        # cut_h = min(cut_h, H1)
+        # cut_w = min(cut_w, W1)
+
+        # 随机选择裁剪起点
+        if H2 - cut_h > 0:
+            y1 = np.random.randint(0, H2 - cut_h)
         else:
-            # 计算裁剪的高度和宽度
-            new_lam = area / (H2 * W2)
-            cut_h = int(H2 * np.sqrt(new_lam))
-            cut_w = int(W2 * np.sqrt(new_lam))
-            
-            # 限制裁剪尺寸不超过目标图像尺寸
-            cut_h = min(cut_h, H1)
-            cut_w = min(cut_w, W1)
+            y1 = 0
 
-            # 随机选择裁剪起点
-            y1 = np.random.randint(0, H2 - cut_h + 1)
-            x1 = np.random.randint(0, W2 - cut_w + 1)
+        if W2 - cut_w > 0:
+            x1 = np.random.randint(0, W2 - cut_w)
+        else:
+            x1 = 0
 
-            # 裁剪图像
-            new_img2 = img2[y1:y1 + cut_h, x1:x1 + cut_w]
-            new_mask = np.ones((cut_h, cut_w), dtype=np.float32)
+        # 裁剪图像
+        new_img2 = img2[y1:y1 + cut_h, x1:x1 + cut_w]
+        new_mask = np.ones((cut_h, cut_w), dtype=np.float32)
 
         # 粘贴到目标图像中的位置
         paste_y = np.random.randint(0, H1 - cut_h + 1)
         paste_x = np.random.randint(0, W1 - cut_w + 1)
 
+        cutmix_img = img1.copy()
         try:
-            # 确保不越界粘贴
-            cutmix_img = img1.copy()
+            # 先检查尺寸是否匹配，避免出现错误
+            if new_img2.shape[0] > cutmix_img.shape[0] or new_img2.shape[1] > cutmix_img.shape[1]:
+                raise ValueError(f"Image sizes don't match: {new_img2.shape} cannot fit into {cutmix_img.shape}")
             cutmix_img[paste_y:paste_y + cut_h, paste_x:paste_x + cut_w] = new_img2
         except ValueError as e:
             print(f"Error encountered: {e}")
             print(f'new_img2 shape: {new_img2.shape}, cutmix_img shape: {cutmix_img.shape}')
             print(f'Paste coordinates: paste_y={paste_y}, paste_x={paste_x}, cut_h={cut_h}, cut_w={cut_w}')
-            raise
+            raise e
 
         mask_label = img1_label.copy()
-        mask_label[paste_y:paste_y + cut_h, paste_x:paste_x + cut_w] = 1 # 图像篡改，所以label为1
+        mask_label[paste_y:paste_y + cut_h, paste_x:paste_x + cut_w] = 1 * 255 # 图像篡改，所以label为1
 
     cutmix_label = 1 # 凡是cutmix的都是伪造的
 
@@ -371,8 +383,8 @@ def mixup_data(img1_path=None, img2_path=None, mask=None, alpha=None, transform=
     mixed_img = mask_expanded * real_img + (1 - mask_expanded) * mixup_fake_real    
     mixed_label = 1
     
-    real_label = np.full((real_img.shape[0], real_img.shape[1], 3), 0, dtype=np.float32)
-    fake_label = np.full((real_img.shape[0], real_img.shape[1], 3), 1, dtype=np.float32)
+    real_label = np.full((real_img.shape[0], real_img.shape[1], 3), 0 * 255, dtype=np.float32)
+    fake_label = np.full((real_img.shape[0], real_img.shape[1], 3), 1 * 255, dtype=np.float32)
     mask_label = mask_expanded * real_label + (1 - mask_expanded) * fake_label
     
     
@@ -418,6 +430,7 @@ if __name__ == '__main__':
 #     mask=test_mask, alpha=0.5, transform=create_train_transforms(224))
     
 #     print('cutmix_label:', aug_label)
+    
     
     # 保存 cutmix_img 为图像文件
     cutmix_img = Image.fromarray(cutmix_img)

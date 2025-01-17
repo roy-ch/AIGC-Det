@@ -1,10 +1,12 @@
-base_dir="./output_dir_mesorch"
+# nproc_per_node
+# 
+base_dir="./output_dir_mesorch2"
 mkdir -p ${base_dir}
 
-Prob_aug=0.5
-P_cutmixup_real_fake=0.5
-P_cutmixup_real_rec=0.5
-P_cutmixup_real_real=0
+Prob_aug=1
+P_cutmixup_real_fake=0
+P_cutmixup_real_rec=0
+P_cutmixup_real_real=1
 
 echo "Prob_aug: $Prob_aug"
 echo "P_cutmixup_real_fake: $P_cutmixup_real_fake"
@@ -22,7 +24,7 @@ torchrun  \
     --seg_pretrain_path "./segformer/mit_b3.pth" \
     --world_size 2 \
     --find_unused_parameters \
-    --batch_size 3 \
+    --batch_size 4 \
     --epochs 150 \
     --lr 1e-4 \
     --image_size 512 \
